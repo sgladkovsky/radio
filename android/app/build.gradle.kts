@@ -6,13 +6,14 @@ plugins {
 android {
     namespace = "com.sgladkovsky.radio"
     compileSdk = 34
+    ndkVersion = "28.0.13004108"
 
     defaultConfig {
         applicationId = "com.sgladkovsky.radio"
         minSdk = 24
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = "1.0.1"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
@@ -44,9 +45,20 @@ android {
 
     packaging {
         jniLibs {
+            // Extract on install — reliable on devices like Xiaomi Mi 9T (4 KB pages).
             useLegacyPackaging = true
         }
     }
+}
+
+tasks.register<Exec>("alignNativeLibs16K") {
+    group = "build"
+    description = "Realign arm64 native libraries to 16 KB ELF segments"
+    commandLine("python3", "${rootProject.projectDir}/scripts/align_native_libs.py")
+}
+
+tasks.named("preBuild") {
+    dependsOn("alignNativeLibs16K")
 }
 
 dependencies {

@@ -24,12 +24,24 @@
 
 ```bash
 cd android
+pip install lief   # нужен для выравнивания .so под 16 KB (arm64)
 ./gradlew assembleDebug
 ```
 
 APK: `android/app/build/outputs/apk/debug/app-debug.apk`
 
-Требования: JDK 17+, Android SDK 34.
+Требования: JDK 17+, Android SDK 34, Python 3 + `lief`.
+
+### Совместимость с 16 KB page size (Android 15+)
+
+Нативные библиотеки из dab2 (`libUSBAudio.so`, `libusb100.so`) пересобраны с ELF-выравниванием **16 KB** для `arm64-v8a`. Перед сборкой запускается `scripts/align_native_libs.py`.
+
+### Xiaomi Mi 9T (и аналогичные устройства)
+
+- Архитектура: **arm64-v8a** (также включён armeabi-v7a)
+- Android 9+ (minSdk 24)
+- Нужен **USB OTG**-кабель/переходник
+- `useLegacyPackaging` включён — библиотеки извлекаются при установке (стабильнее на 4 KB устройствах)
 
 ## Установка
 
