@@ -27,8 +27,9 @@ import com.sgladkovsky.radio.ui.StationAdapter
 import com.sgladkovsky.radio.usb.UsbPermissionHelper
 import com.sgladkovsky.radio.util.RadioLog
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -43,12 +44,8 @@ class MainActivity : AppCompatActivity() {
 
     private var radioService: RadioService? = null
     private var serviceBound = false
-    private var stateObserverJob: Job? = null
+    private val boundService = MutableStateFlow<RadioService?>(null)
     private var stateEmissionCount = 0
-
-    private val stateObserverExceptionHandler = CoroutineExceptionHandler { _, error ->
-        RadioLog.e(LOG_TAG, "observeServiceState coroutine failed: ${error.message}", error)
-    }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -61,8 +58,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 radioService = binder.getService()
                 serviceBound = true
+                boundService.value = radioService
                 RadioLog.i(LOG_TAG, "onServiceConnected: radioService=$radioService")
-                observeServiceState()
                 connectUsbIfPossible()
             } catch (error: Exception) {
                 RadioLog.e(LOG_TAG, "onServiceConnected failed", error)
@@ -71,7 +68,7 @@ class MainActivity : AppCompatActivity() {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             RadioLog.w(LOG_TAG, "onServiceDisconnected: name=$name")
-            stopObservingServiceState()
+            boundService.value = null
             radioService = null
             serviceBound = false
         }
@@ -97,25 +94,10 @@ class MainActivity : AppCompatActivity() {
         binding.stationsList.adapter = stationAdapter
 
         setupControls()
+        observeServiceState()
         startAndBindService()
         handleUsbIntent(intent)
         RadioLog.d(LOG_TAG, "onCreate complete: lifecycle=${lifecycle.currentState}")
-    }
-
-    override fun onStart() {
-        super.onStart()
-        RadioLog.d(
-            LOG_TAG,
-            "onStart: serviceBound=$serviceBound jobActive=${stateObserverJob?.isActive} lifecycle=${lifecycle.currentState}"
-        )
-        if (serviceBound && stateObserverJob?.isActive != true) {
-            observeServiceState()
-        }
-    }
-
-    override fun onStop() {
-        RadioLog.d(LOG_TAG, "onStop")
-        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -126,12 +108,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         RadioLog.d(LOG_TAG, "onDestroy")
-        stopObservingServiceState()
         usbPermissionHelper.unregister()
         if (serviceBound) {
             unbindService(serviceConnection)
             serviceBound = false
         }
+        boundService.value = null
         super.onDestroy()
     }
 
@@ -150,44 +132,34 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private fun observeServiceState() {
-        val service = radioService
-        RadioLog.i(
-            LOG_TAG,
-            "observeServiceState enter: service=$service serviceBound=$serviceBound " +
-                "lifecycle=${lifecycle.currentState} thread=${Thread.currentThread().name} " +
-                "prevJob=${stateObserverJob?.isActive}"
-        )
-
-        if (service == null) {
-            RadioLog.w(LOG_TAG, "observeServiceState: radioService is null, skip")
-            return
-        }
-
-        stopObservingServiceState()
-        stateEmissionCount = 0
-
-        stateObserverJob = lifecycleScope.launch(stateObserverExceptionHandler) {
-            RadioLog.d(LOG_TAG, "observeServiceState: coroutine started job=${coroutineContext[Job]}")
+        lifecycleScope.launch {
+            RadioLog.d(LOG_TAG, "observeServiceState: repeatOnLifecycle registered in onCreate")
             try {
                 repeatOnLifecycle(Lifecycle.State.STARTED) {
                     RadioLog.i(
                         LOG_TAG,
                         "observeServiceState: repeatOnLifecycle STARTED block entered, " +
-                            "lifecycle=${lifecycle.currentState} service=$service"
+                            "lifecycle=${lifecycle.currentState}"
                     )
+                    stateEmissionCount = 0
                     try {
-                        service.state.collect { state ->
-                            stateEmissionCount++
-                            RadioLog.d(
-                                LOG_TAG,
-                                "observeServiceState: emission #$stateEmissionCount " +
-                                    "connected=${state.connected} band=${state.band} " +
-                                    "freq=${state.frequency} stations=${state.stations.size} " +
-                                    "msg='${state.statusMessage}' thread=${Thread.currentThread().name}"
-                            )
-                            renderState(state)
-                        }
+                        boundService
+                            .flatMapLatest { service ->
+                                service?.state ?: flowOf(RadioState())
+                            }
+                            .collect { state ->
+                                stateEmissionCount++
+                                RadioLog.d(
+                                    LOG_TAG,
+                                    "observeServiceState: emission #$stateEmissionCount " +
+                                        "connected=${state.connected} band=${state.band} " +
+                                        "freq=${state.frequency} stations=${state.stations.size} " +
+                                        "msg='${state.statusMessage}' thread=${Thread.currentThread().name}"
+                                )
+                                renderState(state)
+                            }
                     } catch (error: CancellationException) {
                         RadioLog.d(LOG_TAG, "observeServiceState: collect cancelled")
                         throw error
@@ -203,25 +175,8 @@ class MainActivity : AppCompatActivity() {
                 throw error
             } catch (error: Exception) {
                 RadioLog.e(LOG_TAG, "observeServiceState: repeatOnLifecycle failed", error)
-                throw error
-            } finally {
-                RadioLog.d(LOG_TAG, "observeServiceState: coroutine finished")
             }
         }
-
-        RadioLog.d(LOG_TAG, "observeServiceState: launched job=${stateObserverJob?.isActive}")
-    }
-
-    private fun stopObservingServiceState() {
-        if (stateObserverJob != null) {
-            RadioLog.d(
-                LOG_TAG,
-                "stopObservingServiceState: cancelling job active=${stateObserverJob?.isActive} " +
-                    "emissions=$stateEmissionCount"
-            )
-        }
-        stateObserverJob?.cancel()
-        stateObserverJob = null
     }
 
     private fun setupControls() {
