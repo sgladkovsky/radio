@@ -1,0 +1,6 @@
+apk_analysis/
+android/.gradle/
+android/**/build/
+android/local.properties
+*.iml
+.idea/
