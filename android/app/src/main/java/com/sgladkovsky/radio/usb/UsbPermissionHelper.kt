@@ -9,7 +9,6 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import androidx.activity.ComponentActivity
-import androidx.core.content.ContextCompat
 import com.sgladkovsky.radio.protocol.RadioProtocol
 
 class UsbPermissionHelper(
@@ -17,6 +16,7 @@ class UsbPermissionHelper(
     private val onPermissionGranted: (UsbDevice) -> Unit
 ) {
     private val usbManager = activity.getSystemService(Context.USB_SERVICE) as UsbManager
+    private var registered = false
 
     private val permissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -29,12 +29,25 @@ class UsbPermissionHelper(
     }
 
     init {
+        register()
+    }
+
+    private fun register() {
+        if (registered) return
         val filter = IntentFilter(ACTION_USB_PERMISSION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             activity.registerReceiver(permissionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
-            ContextCompat.registerReceiver(activity, permissionReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            @Suppress("DEPRECATION")
+            activity.registerReceiver(permissionReceiver, filter)
         }
+        registered = true
+    }
+
+    fun unregister() {
+        if (!registered) return
+        runCatching { activity.unregisterReceiver(permissionReceiver) }
+        registered = false
     }
 
     fun findSupportedDevice(): UsbDevice? {
@@ -54,8 +67,8 @@ class UsbPermissionHelper(
         val pendingIntent = PendingIntent.getBroadcast(
             activity,
             0,
-            Intent(ACTION_USB_PERMISSION),
-            PendingIntent.FLAG_IMMUTABLE
+            Intent(ACTION_USB_PERMISSION).setPackage(activity.packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         usbManager.requestPermission(device, pendingIntent)
     }

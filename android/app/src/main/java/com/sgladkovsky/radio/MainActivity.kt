@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
 import android.view.View
@@ -18,12 +19,14 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.sgladkovsky.radio.databinding.ActivityMainBinding
 import com.sgladkovsky.radio.model.RadioBand
+import com.sgladkovsky.radio.model.RadioState
 import com.sgladkovsky.radio.model.RadioStation
 import com.sgladkovsky.radio.protocol.RadioCommand
 import com.sgladkovsky.radio.protocol.RadioProtocol
 import com.sgladkovsky.radio.service.RadioService
 import com.sgladkovsky.radio.ui.StationAdapter
 import com.sgladkovsky.radio.usb.UsbPermissionHelper
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -34,19 +37,18 @@ class MainActivity : AppCompatActivity() {
 
     private var radioService: RadioService? = null
     private var serviceBound = false
+    private var stateObserverJob: Job? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             radioService = (service as RadioService.RadioBinder).getService()
             serviceBound = true
-            usbPermissionHelper.findSupportedDevice()?.let { device ->
-                if (usbPermissionHelper.hasPermission(device)) {
-                    radioService?.connectDevice(device)
-                }
-            }
+            startObservingServiceState()
+            connectUsbIfPossible()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
+            stopObservingServiceState()
             radioService = null
             serviceBound = false
         }
@@ -70,24 +72,57 @@ class MainActivity : AppCompatActivity() {
         binding.stationsList.adapter = stationAdapter
 
         setupControls()
-        observeServiceState()
-
-        ContextCompat.startForegroundService(this, Intent(this, RadioService::class.java))
-        bindService(Intent(this, RadioService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
-
+        startAndBindService()
         handleUsbIntent(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (serviceBound && stateObserverJob?.isActive != true) {
+            startObservingServiceState()
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleUsbIntent(intent)
     }
 
     override fun onDestroy() {
+        stopObservingServiceState()
+        usbPermissionHelper.unregister()
         if (serviceBound) {
             unbindService(serviceConnection)
+            serviceBound = false
         }
         super.onDestroy()
+    }
+
+    private fun startAndBindService() {
+        ContextCompat.startForegroundService(this, Intent(this, RadioService::class.java))
+        bindService(
+            Intent(this, RadioService::class.java),
+            serviceConnection,
+            Context.BIND_AUTO_CREATE
+        )
+    }
+
+    private fun startObservingServiceState() {
+        val service = radioService ?: return
+        stopObservingServiceState()
+        stateObserverJob = lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                service.state.collect { state ->
+                    renderState(state)
+                }
+            }
+        }
+    }
+
+    private fun stopObservingServiceState() {
+        stateObserverJob?.cancel()
+        stateObserverJob = null
     }
 
     private fun setupControls() {
@@ -124,18 +159,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun observeServiceState() {
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                while (radioService == null) {
-                    kotlinx.coroutines.delay(50)
-                }
-                radioService?.state?.collect { state -> renderState(state) }
-            }
-        }
-    }
-
-    private fun renderState(state: com.sgladkovsky.radio.model.RadioState) {
+    private fun renderState(state: RadioState) {
         binding.statusText.text = state.statusMessage
         binding.bandText.text = when (state.band) {
             RadioBand.AM -> getString(R.string.band_am)
@@ -160,7 +184,7 @@ class MainActivity : AppCompatActivity() {
             binding.btnScan, binding.btnPlayPause, binding.btnRefresh
         ).forEach { it.isEnabled = enabled }
 
-        stationAdapter.submitList(state.stations)
+        stationAdapter.submitList(state.stations.toList())
         binding.stationsLabel.visibility = if (state.stations.isEmpty()) View.GONE else View.VISIBLE
     }
 
@@ -174,8 +198,16 @@ class MainActivity : AppCompatActivity() {
         radioService?.requestStatus()
     }
 
+    private fun connectUsbIfPossible() {
+        usbPermissionHelper.findSupportedDevice()?.let { device ->
+            if (usbPermissionHelper.hasPermission(device)) {
+                radioService?.connectDevice(device)
+            }
+        }
+    }
+
     private fun handleUsbIntent(intent: Intent?) {
-        val device = intent?.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
+        val device = readUsbDevice(intent)
         if (device != null && RadioProtocol.isSupportedDevice(device.vendorId, device.productId)) {
             usbPermissionHelper.requestPermission(device)
             return
@@ -189,6 +221,16 @@ class MainActivity : AppCompatActivity() {
             }
         } ?: run {
             Toast.makeText(this, R.string.status_disconnected, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun readUsbDevice(intent: Intent?): UsbDevice? {
+        intent ?: return null
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE, UsbDevice::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
         }
     }
 }

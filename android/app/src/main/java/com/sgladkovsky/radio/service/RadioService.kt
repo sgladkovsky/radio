@@ -62,9 +62,20 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
 
     override fun onCreate() {
         super.onCreate()
-        usbAudio = USBAudio()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.status_disconnected)))
+        try {
+            usbAudio = USBAudio()
+        } catch (error: UnsatisfiedLinkError) {
+            Log.e(TAG, "Failed to load USB audio native libraries", error)
+            usbAudio = null
+            _state.update {
+                it.copy(statusMessage = "Ошибка загрузки аудио-библиотек")
+            }
+        } catch (error: Exception) {
+            Log.e(TAG, "Failed to initialize USB audio", error)
+            usbAudio = null
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
