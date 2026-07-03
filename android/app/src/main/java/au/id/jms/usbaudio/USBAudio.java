@@ -3,17 +3,20 @@ package au.id.jms.usbaudio;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
+import android.os.Environment;
 import android.text.TextUtils;
 import android.util.Log;
 
 import com.hyinfo.util.USBMonitor;
 
+import java.io.File;
+import java.io.FileOutputStream;
+
 /**
  * JNI wrapper for libUSBAudio.so from dab2_V3.12.
- * Field and method names must match native symbols exactly.
+ * Layout must match the original class exactly for native setField_long("mNativePtr").
  */
 public class USBAudio {
-    private static final String TAG = "USBAudio";
     private static final String DEFAULT_USBFS = "/dev/bus/usb";
     private static AudioTrack track;
 
@@ -21,17 +24,20 @@ public class USBAudio {
         System.loadLibrary("USBAudio");
     }
 
-    private int SAMPLE_RATE_HZ = 48000;
-    private int channel = 2;
-    private boolean bInitUSBAudio;
+    private String TAG = "USBAudio";
+    private boolean receivedData;
     private boolean bStart;
     private boolean bStop = true;
-    private boolean receivedData;
+    private boolean bInitUSBAudio;
     private USBMonitor.UsbControlBlock mCtrlBlock;
-
+    public File pcmFile;
+    public FileOutputStream fileOutputStream;
     protected long mNativePtr;
+    private int SAMPLE_RATE_HZ = 48000;
+    private int channel = 2;
 
     public USBAudio() {
+        pcmFile = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + "/hy.pcm");
         mNativePtr = nativeCreate();
         Log.d(TAG, "USBAudio: nativeCreate");
     }
@@ -50,7 +56,7 @@ public class USBAudio {
                 getUSBFSName(mCtrlBlock)
             );
         } catch (Exception error) {
-            Log.e(TAG, "initAudio exception", error);
+            Log.e(TAG, String.valueOf(error));
             result = -1;
         }
 
@@ -84,7 +90,12 @@ public class USBAudio {
             return;
         }
         receivedData = false;
-        new Thread(() -> nativeStartCapture(mNativePtr), "USBAudioCapture").start();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                nativeStartCapture(mNativePtr);
+            }
+        }).start();
         bStart = true;
     }
 
