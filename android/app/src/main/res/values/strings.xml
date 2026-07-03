@@ -13,4 +13,5 @@
     <string name="notification_title">USB Radio</string>
     <string name="notification_text">Радио работает в фоне</string>
     <string name="permission_usb_required">Требуется разрешение USB для управления радиоприёмником</string>
+    <string name="permission_notifications_required">Разрешите уведомления для работы радио в фоне</string>
 </resources>

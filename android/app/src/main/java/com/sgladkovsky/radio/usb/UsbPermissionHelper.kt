@@ -9,6 +9,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import androidx.activity.ComponentActivity
+import androidx.core.content.ContextCompat
 import com.sgladkovsky.radio.protocol.RadioProtocol
 
 class UsbPermissionHelper(
@@ -35,12 +36,12 @@ class UsbPermissionHelper(
     private fun register() {
         if (registered) return
         val filter = IntentFilter(ACTION_USB_PERMISSION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            activity.registerReceiver(permissionReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            activity.registerReceiver(permissionReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            activity,
+            permissionReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         registered = true
     }
 

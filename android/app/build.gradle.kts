@@ -3,6 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+import java.io.ByteArrayOutputStream
+
 android {
     namespace = "com.sgladkovsky.radio"
     compileSdk = 34
@@ -12,8 +14,8 @@ android {
         applicationId = "com.sgladkovsky.radio"
         minSdk = 24
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.0.4"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
@@ -52,10 +54,38 @@ android {
     }
 }
 
-tasks.register<Exec>("alignNativeLibs16K") {
+tasks.register("alignNativeLibs16K") {
     group = "build"
-    description = "Realign arm64 native libraries to 16 KB ELF segments"
-    commandLine("python3", "${rootProject.projectDir}/scripts/align_native_libs.py")
+    description = "Realign arm64 native libraries to 16 KB ELF segments (optional; requires Python + lief)"
+
+    val script = rootProject.file("scripts/align_native_libs.py")
+
+    doLast {
+        val python = listOf("python3", "python").firstOrNull { command ->
+            runCatching {
+                val output = ByteArrayOutputStream()
+                exec {
+                    commandLine(command, "--version")
+                    standardOutput = output
+                    errorOutput = output
+                    isIgnoreExitValue = true
+                }.exitValue == 0
+            }.getOrDefault(false)
+        }
+
+        if (python == null) {
+            logger.lifecycle(
+                "alignNativeLibs16K: Python not found, skipping (prebuilt libs are already aligned)"
+            )
+            return@doLast
+        }
+
+        logger.lifecycle("alignNativeLibs16K: running $python ${script.name}")
+        exec {
+            commandLine(python, script.absolutePath)
+            isIgnoreExitValue = true
+        }
+    }
 }
 
 tasks.named("preBuild") {

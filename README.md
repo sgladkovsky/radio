@@ -24,13 +24,21 @@
 
 ```bash
 cd android
-pip install lief   # нужен для выравнивания .so под 16 KB (arm64)
 ./gradlew assembleDebug
+```
+
+На Windows используйте `gradlew.bat assembleDebug`. Python не требуется — нативные библиотеки уже выровнены в репозитории.
+
+Опционально (только при замене `.so` файлов на Android 15+ / 16 KB page size):
+
+```bash
+pip install lief
+python scripts/align_native_libs.py   # Windows: python, Linux/macOS: python3
 ```
 
 APK: `android/app/build/outputs/apk/debug/app-debug.apk`
 
-Требования: JDK 17+, Android SDK 34, Python 3 + `lief`.
+Требования: JDK 17+, Android SDK 34.
 
 ### Совместимость с 16 KB page size (Android 15+)
 

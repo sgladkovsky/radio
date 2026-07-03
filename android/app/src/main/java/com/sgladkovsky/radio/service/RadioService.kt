@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Binder
@@ -14,6 +15,7 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import au.id.jms.usbaudio.USBAudio
 import com.hoho.android.usbserial.driver.CdcAcmSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
@@ -65,7 +67,11 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
         super.onCreate()
         Log.i(TAG, "RadioService onCreate v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.status_disconnected)))
+        if (canPostNotifications()) {
+            startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.status_disconnected)))
+        } else {
+            Log.w(TAG, "POST_NOTIFICATIONS not granted; foreground notification skipped")
+        }
         try {
             System.loadLibrary("usb100")
             usbAudio = USBAudio()
@@ -353,7 +359,20 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
             .build()
     }
 
+    private fun canPostNotifications(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return true
+        }
+        return ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     private fun updateNotification(text: String) {
+        if (!canPostNotifications()) {
+            return
+        }
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(NOTIFICATION_ID, buildNotification(text))
     }
