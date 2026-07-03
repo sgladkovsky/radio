@@ -19,6 +19,7 @@ import com.hoho.android.usbserial.driver.CdcAcmSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import com.hyinfo.util.USBMonitor
+import com.sgladkovsky.radio.BuildConfig
 import com.sgladkovsky.radio.MainActivity
 import com.sgladkovsky.radio.R
 import com.sgladkovsky.radio.model.RadioBand
@@ -62,9 +63,22 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
 
     override fun onCreate() {
         super.onCreate()
-        usbAudio = USBAudio()
+        Log.i(TAG, "RadioService onCreate v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.status_disconnected)))
+        try {
+            System.loadLibrary("usb100")
+            usbAudio = USBAudio()
+        } catch (error: UnsatisfiedLinkError) {
+            Log.e(TAG, "Failed to load USB audio native libraries", error)
+            usbAudio = null
+            _state.update {
+                it.copy(statusMessage = "Ошибка загрузки аудио-библиотек")
+            }
+        } catch (error: Exception) {
+            Log.e(TAG, "Failed to initialize USB audio", error)
+            usbAudio = null
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -135,7 +149,7 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
     }
 
     fun startAudioPlayback() {
-        if (usbAudio?.isInitialized == true) {
+        if (usbAudio?.isInitUSBAudio == true) {
             usbAudio?.play()
             usbAudio?.startCapture()
             _state.update { it.copy(playing = true) }
