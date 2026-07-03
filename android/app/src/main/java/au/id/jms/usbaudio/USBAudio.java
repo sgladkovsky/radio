@@ -3,93 +3,111 @@ package au.id.jms.usbaudio;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.hyinfo.util.USBMonitor;
 
 /**
  * JNI wrapper for libUSBAudio.so from dab2_V3.12.
- * Package and method names must match native symbols.
+ * Field and method names must match native symbols exactly.
  */
 public class USBAudio {
     private static final String TAG = "USBAudio";
+    private static final String DEFAULT_USBFS = "/dev/bus/usb";
     private static AudioTrack track;
 
     static {
-        System.loadLibrary("usb100");
         System.loadLibrary("USBAudio");
     }
 
-    private final long nativePtr;
-    private boolean initialized;
-    private boolean stopped = true;
-    private int sampleRateHz = 48000;
-    private int channelCount = 2;
+    private int SAMPLE_RATE_HZ = 48000;
+    private int channel = 2;
+    private boolean bInitUSBAudio;
+    private boolean bStart;
+    private boolean bStop = true;
+    private boolean receivedData;
+    private USBMonitor.UsbControlBlock mCtrlBlock;
+
+    protected long mNativePtr;
 
     public USBAudio() {
-        nativePtr = nativeCreate();
+        mNativePtr = nativeCreate();
+        Log.d(TAG, "USBAudio: nativeCreate");
     }
 
     public void initAudio(USBMonitor.UsbControlBlock controlBlock) {
-        int result = nativeInit(
-            nativePtr,
-            controlBlock.getVenderId(),
-            controlBlock.getProductId(),
-            controlBlock.getBusNum(),
-            controlBlock.getDevNum(),
-            controlBlock.getFileDescriptor(),
-            controlBlock.getUSBFSName()
-        );
+        int result;
+        try {
+            mCtrlBlock = controlBlock.clone();
+            result = nativeInit(
+                mNativePtr,
+                mCtrlBlock.getVenderId(),
+                mCtrlBlock.getProductId(),
+                mCtrlBlock.getBusNum(),
+                mCtrlBlock.getDevNum(),
+                mCtrlBlock.getFileDescriptor(),
+                getUSBFSName(mCtrlBlock)
+            );
+        } catch (Exception error) {
+            Log.e(TAG, "initAudio exception", error);
+            result = -1;
+        }
 
+        Log.d(TAG, "initAudio: " + result);
         if (result < 0) {
-            Log.e(TAG, "initAudio failed: " + result);
             return;
         }
 
-        initialized = true;
+        bInitUSBAudio = true;
         setAudioConfig();
     }
 
-    public boolean isInitialized() {
-        return initialized;
+    public boolean isInitUSBAudio() {
+        return bInitUSBAudio;
     }
 
     public void setAudioConfig() {
-        channelCount = nativeGetChannelCount(nativePtr);
-        sampleRateHz = nativeGetSampleRate(nativePtr);
-        int bitResolution = nativeGetBitResolution(nativePtr);
-        Log.d(TAG, "Audio config: rate=" + sampleRateHz + " channels=" + channelCount + " bits=" + bitResolution);
+        channel = nativeGetChannelCount(mNativePtr);
+        SAMPLE_RATE_HZ = nativeGetSampleRate(mNativePtr);
+        int bitResolution = nativeGetBitResolution(mNativePtr);
+        Log.d(TAG, "setAudioConfig: Channel " + channel);
+        Log.d(TAG, "setAudioConfig: SampleRate " + SAMPLE_RATE_HZ);
+        Log.d(TAG, "setAudioConfig: BitResolution " + bitResolution);
         initPlay();
     }
 
     public void startCapture() {
-        stopped = false;
-        if (!initialized) {
+        Log.d(TAG, "startCapture");
+        bStop = false;
+        if (bStart) {
             return;
         }
-        new Thread(() -> nativeStartCapture(nativePtr), "USBAudioCapture").start();
+        receivedData = false;
+        new Thread(() -> nativeStartCapture(mNativePtr), "USBAudioCapture").start();
+        bStart = true;
     }
 
     public void stopCapture() {
-        if (!initialized) {
-            return;
-        }
-        nativeStopCapture(nativePtr);
+        Log.d(TAG, "stopCapture");
+        bStop = true;
     }
 
     public void play() {
-        stopped = false;
+        Log.d(TAG, "play");
+        bStop = false;
     }
 
     public void pause() {
-        stopped = true;
+        Log.d(TAG, "pause");
+        bStop = true;
     }
 
     public void closeAudio() {
-        if (initialized) {
-            nativeClose(nativePtr);
-            initialized = false;
-        }
+        Log.d(TAG, "closeAudio");
+        nativeClose(mNativePtr);
+        bInitUSBAudio = false;
+        bStart = false;
         if (track != null) {
             track.stop();
             track.release();
@@ -99,17 +117,44 @@ public class USBAudio {
 
     @SuppressWarnings("unused")
     public void pcmData(byte[] data) {
-        if (stopped || track == null || data == null) {
-            return;
+        if (!receivedData) {
+            Log.d(TAG, "pcmData: " + (data != null ? data.length : 0));
+            receivedData = true;
         }
-        track.write(data, 0, data.length);
+        if (!bStop && track != null && data != null) {
+            track.write(data, 0, data.length);
+        }
+    }
+
+    private String getUSBFSName(USBMonitor.UsbControlBlock controlBlock) {
+        String deviceName = controlBlock.getDeviceName();
+        String[] parts = !TextUtils.isEmpty(deviceName) ? deviceName.split("/") : null;
+        String usbfs = null;
+        if (parts != null && parts.length > 2) {
+            StringBuilder builder = new StringBuilder(parts[0]);
+            for (int i = 1; i < parts.length - 1; i++) {
+                builder.append('/').append(parts[i]);
+            }
+            usbfs = builder.toString();
+        }
+        if (TextUtils.isEmpty(usbfs)) {
+            Log.d(TAG, "failed to get USBFS path, try to use default path:" + deviceName);
+            usbfs = DEFAULT_USBFS;
+        }
+        Log.d(TAG, "getUSBFSName:" + usbfs);
+        return usbfs;
     }
 
     private void initPlay() {
-        int channelConfig = channelCount == 1
+        int channelConfig = channel == 1
             ? AudioFormat.CHANNEL_OUT_MONO
             : AudioFormat.CHANNEL_OUT_STEREO;
-        int minBuffer = AudioTrack.getMinBufferSize(sampleRateHz, channelConfig, AudioFormat.ENCODING_PCM_16BIT);
+        int minBuffer = AudioTrack.getMinBufferSize(
+            SAMPLE_RATE_HZ,
+            channelConfig,
+            AudioFormat.ENCODING_PCM_16BIT
+        );
+        Log.d(TAG, "Buf size: " + minBuffer);
 
         if (track != null) {
             track.stop();
@@ -118,7 +163,7 @@ public class USBAudio {
 
         track = new AudioTrack(
             AudioManager.STREAM_MUSIC,
-            sampleRateHz,
+            SAMPLE_RATE_HZ,
             channelConfig,
             AudioFormat.ENCODING_PCM_16BIT,
             minBuffer,
@@ -135,4 +180,5 @@ public class USBAudio {
     private native int nativeGetBitResolution(long ptr);
     private native int nativeStartCapture(long ptr);
     private native int nativeStopCapture(long ptr);
+    private native boolean nativeIsRunning(long ptr);
 }

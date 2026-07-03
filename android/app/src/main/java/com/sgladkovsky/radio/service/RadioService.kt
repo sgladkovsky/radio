@@ -65,6 +65,7 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification(getString(R.string.status_disconnected)))
         try {
+            System.loadLibrary("usb100")
             usbAudio = USBAudio()
         } catch (error: UnsatisfiedLinkError) {
             Log.e(TAG, "Failed to load USB audio native libraries", error)
@@ -146,7 +147,7 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
     }
 
     fun startAudioPlayback() {
-        if (usbAudio?.isInitialized == true) {
+        if (usbAudio?.isInitUSBAudio == true) {
             usbAudio?.play()
             usbAudio?.startCapture()
             _state.update { it.copy(playing = true) }
