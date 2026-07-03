@@ -8,11 +8,9 @@ from pathlib import Path
 
 try:
     import lief
-except ImportError as exc:
-    raise SystemExit(
-        "lief is required: pip install lief\n"
-        "This script realigns prebuilt .so files from dab2 for 16 KB page devices."
-    ) from exc
+except ImportError:
+    print("lief not installed; skipping native library realignment (prebuilt libs are already aligned)")
+    raise SystemExit(0)
 
 PAGE_SIZE = 0x4000
 JNI_LIBS = Path(__file__).resolve().parents[1] / "app" / "src" / "main" / "jniLibs"

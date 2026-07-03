@@ -1,5 +1,6 @@
 package com.sgladkovsky.radio
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -11,6 +12,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.view.View
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -46,6 +48,16 @@ class MainActivity : AppCompatActivity() {
     private var serviceBound = false
     private val boundService = MutableStateFlow<RadioService?>(null)
     private var stateEmissionCount = 0
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            startAndBindService()
+        } else {
+            Toast.makeText(this, R.string.permission_notifications_required, Toast.LENGTH_LONG).show()
+        }
+    }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -95,7 +107,7 @@ class MainActivity : AppCompatActivity() {
 
         setupControls()
         observeServiceState()
-        startAndBindService()
+        ensureNotificationPermissionAndStartService()
         handleUsbIntent(intent)
         RadioLog.d(LOG_TAG, "onCreate complete: lifecycle=${lifecycle.currentState}")
     }
@@ -115,6 +127,17 @@ class MainActivity : AppCompatActivity() {
         }
         boundService.value = null
         super.onDestroy()
+    }
+
+    private fun ensureNotificationPermissionAndStartService() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            startAndBindService()
+            return
+        }
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     private fun startAndBindService() {
