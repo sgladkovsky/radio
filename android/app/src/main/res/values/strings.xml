@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">USB Radio</string>
+    <string name="status_disconnected">Радиоприёмник не подключён</string>
+    <string name="status_connecting">Подключение…</string>
+    <string name="status_connected">Подключено</string>
+    <string name="status_scanning">Сканирование…</string>
+    <string name="band_am">AM</string>
+    <string name="band_fm">FM</string>
+    <string name="band_dab">DAB</string>
+    <string name="no_stations">Станции не найдены</string>
+    <string name="notification_channel">USB Radio</string>
+    <string name="notification_title">USB Radio</string>
+    <string name="notification_text">Радио работает в фоне</string>
+    <string name="permission_usb_required">Требуется разрешение USB для управления радиоприёмником</string>
+</resources>
