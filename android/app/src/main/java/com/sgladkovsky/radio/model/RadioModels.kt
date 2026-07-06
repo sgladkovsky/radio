@@ -22,6 +22,23 @@ object BandRanges {
         RadioBand.DAB -> 0
     }
 
+    fun tuneStep(band: RadioBand): Int = when (band) {
+        RadioBand.AM -> 9
+        RadioBand.FM -> 1
+        RadioBand.DAB -> 0
+    }
+
+    fun stepFrequency(band: RadioBand, frequency: Int, direction: Int): Int {
+        if (direction == 0 || band == RadioBand.DAB) return frequency
+        val step = tuneStep(band) * direction
+        val next = frequency + step
+        return when (band) {
+            RadioBand.AM -> next.coerceIn(AM_START_KHZ, AM_END_KHZ)
+            RadioBand.FM -> next.coerceIn(FM_START_TENTH_MHZ, FM_END_TENTH_MHZ)
+            RadioBand.DAB -> frequency
+        }
+    }
+
     fun defaultFrequencies(): Map<RadioBand, Int> =
         RadioBand.entries.associateWith { startFrequency(it) }
 }
