@@ -27,6 +27,7 @@ import com.sgladkovsky.radio.protocol.RadioCommand
 import com.sgladkovsky.radio.protocol.RadioProtocol
 import com.sgladkovsky.radio.service.RadioService
 import com.sgladkovsky.radio.ui.StationAdapter
+import com.sgladkovsky.radio.usb.UsbPermissionHelper
 import com.sgladkovsky.radio.util.RadioLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
