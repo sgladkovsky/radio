@@ -20,13 +20,13 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.sgladkovsky.radio.databinding.ActivityMainBinding
+import com.sgladkovsky.radio.model.BandRanges
 import com.sgladkovsky.radio.model.RadioBand
 import com.sgladkovsky.radio.model.RadioState
 import com.sgladkovsky.radio.protocol.RadioCommand
 import com.sgladkovsky.radio.protocol.RadioProtocol
 import com.sgladkovsky.radio.service.RadioService
 import com.sgladkovsky.radio.ui.StationAdapter
-import com.sgladkovsky.radio.usb.UsbPermissionHelper
 import com.sgladkovsky.radio.util.RadioLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private var serviceBound = false
     private val boundService = MutableStateFlow<RadioService?>(null)
     private var stateEmissionCount = 0
+    private var suppressBandToggle = false
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -203,9 +204,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupControls() {
-        binding.btnAm.setOnClickListener { switchBand(RadioBand.AM) }
-        binding.btnFm.setOnClickListener { switchBand(RadioBand.FM) }
-        binding.btnDab.setOnClickListener { switchBand(RadioBand.DAB) }
+        binding.bandToggle.check(R.id.btnFm)
+        binding.bandToggle.addOnButtonCheckedListener { _, checkedId, isChecked ->
+            if (!isChecked || suppressBandToggle) return@addOnButtonCheckedListener
+            when (checkedId) {
+                R.id.btnAm -> radioService?.switchBand(RadioBand.AM)
+                R.id.btnFm -> radioService?.switchBand(RadioBand.FM)
+                R.id.btnDab -> radioService?.switchBand(RadioBand.DAB)
+            }
+        }
 
         binding.btnTuneDown.setOnClickListener { radioService?.sendCommand(RadioCommand.TUNE_DOWN) }
         binding.btnTuneUp.setOnClickListener { radioService?.sendCommand(RadioCommand.TUNE_UP) }
@@ -240,46 +247,72 @@ class MainActivity : AppCompatActivity() {
         try {
             RadioLog.d(LOG_TAG, "renderState begin: $state")
             binding.statusText.text = state.statusMessage
+
+            suppressBandToggle = true
+            when (state.band) {
+                RadioBand.AM -> binding.bandToggle.check(R.id.btnAm)
+                RadioBand.FM -> binding.bandToggle.check(R.id.btnFm)
+                RadioBand.DAB -> binding.bandToggle.check(R.id.btnDab)
+            }
+            suppressBandToggle = false
+
             binding.bandText.text = when (state.band) {
                 RadioBand.AM -> getString(R.string.band_am)
                 RadioBand.FM -> getString(R.string.band_fm)
                 RadioBand.DAB -> getString(R.string.band_dab)
             }
-            binding.frequencyText.text = if (state.frequency > 0) {
-                RadioProtocol.formatFrequency(state.frequency, state.band)
-            } else {
-                "---"
+
+            val displayFrequency = state.frequenciesByBand[state.band] ?: state.frequency
+            binding.frequencyText.text = when {
+                state.band == RadioBand.DAB && displayFrequency == 0 -> "---"
+                displayFrequency > 0 -> RadioProtocol.formatFrequency(displayFrequency, state.band)
+                else -> RadioProtocol.formatFrequency(BandRanges.startFrequency(state.band), state.band)
             }
-            binding.stationNameText.text = state.stationName.ifEmpty { "—" }
-            binding.rdsText.text = state.rdsText
-            binding.btnScan.text = if (state.scanning) "Стоп" else "Скан"
+
+            if (state.band == RadioBand.DAB) {
+                binding.stationNameText.visibility =
+                    if (state.stationName.isNotEmpty()) View.VISIBLE else View.GONE
+                binding.stationNameText.text = state.stationName.ifEmpty { "—" }
+                binding.rdsText.visibility =
+                    if (state.rdsText.isNotEmpty()) View.VISIBLE else View.GONE
+                binding.rdsText.text = state.rdsText
+            } else {
+                binding.stationNameText.visibility = View.GONE
+                binding.rdsText.visibility = View.GONE
+            }
+
+            binding.btnScan.text = if (state.scanning) {
+                getString(R.string.auto_scan_stop)
+            } else {
+                getString(R.string.auto_scan)
+            }
             binding.btnPlayPause.text = if (state.playing) "⏸ Pause" else "▶ Play"
 
             val enabled = state.connected
+            binding.bandToggle.isEnabled = enabled
             listOf(
-                binding.btnAm, binding.btnFm, binding.btnDab,
                 binding.btnTuneDown, binding.btnTuneUp,
                 binding.btnSeekDown, binding.btnSeekUp,
                 binding.btnScan, binding.btnPlayPause, binding.btnRefresh
             ).forEach { it.isEnabled = enabled }
 
-            stationAdapter.submitList(state.stations.toList())
-            binding.stationsLabel.visibility = if (state.stations.isEmpty()) View.GONE else View.VISIBLE
+            val bandStations = state.stationsForBand()
+            stationAdapter.submitList(
+                bandStations.mapIndexed { index, station ->
+                    StationAdapter.StationItem(
+                        index = index + 1,
+                        station = station,
+                        selected = state.isStationSelected(station)
+                    )
+                }
+            )
+            binding.stationsList.visibility = if (bandStations.isEmpty()) View.GONE else View.VISIBLE
+            binding.stationsEmptyText.visibility = if (bandStations.isEmpty()) View.VISIBLE else View.GONE
             RadioLog.d(LOG_TAG, "renderState complete")
         } catch (error: Exception) {
             RadioLog.e(LOG_TAG, "renderState failed for state=$state", error)
             throw error
         }
-    }
-
-    private fun switchBand(band: RadioBand) {
-        radioService?.sendCommand(RadioCommand.BAND)
-        when (band) {
-            RadioBand.FM -> radioService?.setFmArea(1)
-            RadioBand.AM -> radioService?.setFmArea(0)
-            RadioBand.DAB -> radioService?.sendCommand(RadioCommand.REQUEST_STATION_LIST)
-        }
-        radioService?.requestStatus()
     }
 
     private fun connectUsbIfPossible() {

@@ -40,7 +40,7 @@
                 android:id="@+id/bandText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="FM"
+                android:text="@string/band_fm"
                 android:textColor="@color/accent"
                 android:textSize="16sp"
                 android:textStyle="bold" />
@@ -63,7 +63,8 @@
                 android:gravity="center"
                 android:text="—"
                 android:textColor="@color/text_secondary"
-                android:textSize="18sp" />
+                android:textSize="18sp"
+                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/rdsText"
@@ -73,27 +74,27 @@
                 android:gravity="center"
                 android:text=""
                 android:textColor="@color/text_secondary"
-                android:textSize="14sp" />
+                android:textSize="14sp"
+                android:visibility="gone" />
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
 
-    <LinearLayout
-        android:id="@+id/bandRow"
+    <com.google.android.material.button.MaterialButtonToggleGroup
+        android:id="@+id/bandToggle"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:gravity="center"
-        android:orientation="horizontal"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/infoCard">
+        app:layout_constraintTop_toBottomOf="@id/infoCard"
+        app:selectionRequired="true"
+        app:singleSelection="true">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnAm"
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
             android:layout_weight="1"
             android:text="@string/band_am" />
 
@@ -102,7 +103,6 @@
             style="@style/Widget.MaterialComponents.Button.OutlinedButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginEnd="8dp"
             android:layout_weight="1"
             android:text="@string/band_fm" />
 
@@ -113,7 +113,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/band_dab" />
-    </LinearLayout>
+    </com.google.android.material.button.MaterialButtonToggleGroup>
 
     <LinearLayout
         android:id="@+id/tuneRow"
@@ -124,7 +124,7 @@
         android:orientation="horizontal"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/bandRow">
+        app:layout_constraintTop_toBottomOf="@id/bandToggle">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnTuneDown"
@@ -179,7 +179,7 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="8dp"
             android:layout_weight="1"
-            android:text="Скан" />
+            android:text="@string/auto_scan" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnPlayPause"
@@ -195,7 +195,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Обновить" />
+            android:text="@string/refresh_list" />
     </LinearLayout>
 
     <TextView
@@ -203,12 +203,25 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="20dp"
-        android:text="Станции"
+        android:text="@string/scanned_stations"
         android:textColor="@color/text_primary"
         android:textSize="16sp"
         android:textStyle="bold"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/controlRow" />
+
+    <TextView
+        android:id="@+id/stationsEmptyText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/no_stations"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/stationsLabel" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/stationsList"

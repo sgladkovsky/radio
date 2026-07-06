@@ -7,4 +7,5 @@
     <color name="surface">#1E1E1E</color>
     <color name="text_primary">#FFFFFF</color>
     <color name="text_secondary">#B3FFFFFF</color>
+    <color name="selected_station">#2A3F5F</color>
 </resources>

@@ -24,6 +24,7 @@ import com.hyinfo.util.USBMonitor
 import com.sgladkovsky.radio.BuildConfig
 import com.sgladkovsky.radio.MainActivity
 import com.sgladkovsky.radio.R
+import com.sgladkovsky.radio.model.BandRanges
 import com.sgladkovsky.radio.model.RadioBand
 import com.sgladkovsky.radio.model.RadioState
 import com.sgladkovsky.radio.model.RadioStation
@@ -145,6 +146,18 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
         if (!_state.value.connected) return
         val packet = RadioProtocol.buildPlayStation(station, nextPacketNumber())
         writePacket(packet)
+        val updatedFrequencies = _state.value.frequenciesByBand.toMutableMap().apply {
+            this[station.band] = station.frequency
+        }
+        _state.update {
+            it.copy(
+                band = station.band,
+                frequency = station.frequency,
+                frequenciesByBand = updatedFrequencies,
+                currentSid = station.sid,
+                stationName = station.name
+            )
+        }
         startAudioPlayback()
     }
 
@@ -152,6 +165,60 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
         if (!_state.value.connected) return
         val packet = RadioProtocol.buildAreaSelect(areaIndex, nextPacketNumber())
         writePacket(packet)
+    }
+
+    fun switchBand(band: RadioBand) {
+        if (!_state.value.connected) return
+        val startFrequency = BandRanges.startFrequency(band)
+        val command = when (band) {
+            RadioBand.AM -> RadioCommand.BAND_AM
+            RadioBand.FM -> RadioCommand.BAND_FM
+            RadioBand.DAB -> RadioCommand.BAND_DAB
+        }
+        sendCommand(command)
+
+        if (band == RadioBand.FM) {
+            setFmArea(1)
+        } else if (band == RadioBand.AM) {
+            setFmArea(0)
+        }
+
+        val updatedFrequencies = _state.value.frequenciesByBand.toMutableMap().apply {
+            this[band] = startFrequency
+        }
+        _state.update {
+            it.copy(
+                band = band,
+                frequency = startFrequency,
+                frequenciesByBand = updatedFrequencies,
+                stationName = "",
+                rdsText = "",
+                currentSid = 0
+            )
+        }
+
+        if (band == RadioBand.DAB) {
+            sendCommand(RadioCommand.REQUEST_STATION_LIST)
+        } else {
+            tuneToFrequency(band, startFrequency)
+        }
+        requestStatus()
+    }
+
+    fun tuneToFrequency(band: RadioBand, frequency: Int) {
+        if (!_state.value.connected) return
+        val packet = RadioProtocol.buildTuneFrequency(band, frequency, nextPacketNumber())
+        writePacket(packet)
+        val updatedFrequencies = _state.value.frequenciesByBand.toMutableMap().apply {
+            this[band] = frequency
+        }
+        _state.update {
+            it.copy(
+                band = band,
+                frequency = frequency,
+                frequenciesByBand = updatedFrequencies
+            )
+        }
     }
 
     fun startAudioPlayback() {
@@ -172,8 +239,15 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
         sendCommand(RadioCommand.REQUEST_ALL_INFO)
     }
 
-    fun startScan(longScan: Boolean = false) {
-        _state.update { it.copy(scanning = true, statusMessage = getString(R.string.status_scanning)) }
+    fun startScan(longScan: Boolean = true) {
+        val band = _state.value.band
+        _state.update {
+            it.copy(
+                scanning = true,
+                stations = it.stations.filter { station -> station.band != band },
+                statusMessage = getString(R.string.status_scanning)
+            )
+        }
         sendCommand(if (longScan) RadioCommand.AUTO_SCAN_LONG else RadioCommand.AUTO_SCAN)
         sendCommand(RadioCommand.REQUEST_STATION_LIST)
     }
@@ -214,11 +288,14 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
                 _state.update {
                     it.copy(
                         connected = true,
+                        band = RadioBand.FM,
+                        frequency = BandRanges.startFrequency(RadioBand.FM),
+                        frequenciesByBand = BandRanges.defaultFrequencies(),
                         statusMessage = getString(R.string.status_connected)
                     )
                 }
                 updateNotification(getString(R.string.status_connected))
-                requestStatus()
+                switchBand(RadioBand.FM)
             }.onFailure { error ->
                 Log.e(TAG, "Connection failed", error)
                 disconnect()
@@ -300,12 +377,20 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
 
         when (packet.getOrNull(5)?.toInt()?.and(0xFF)) {
             0x22 -> RadioProtocol.parsePlayInfo(packet)?.let { info ->
-                _state.update {
-                    it.copy(
+                _state.update { state ->
+                    val updatedFrequencies = state.frequenciesByBand.toMutableMap().apply {
+                        this[info.band] = info.frequency
+                    }
+                    if (info.band != state.band) {
+                        return@update state.copy(frequenciesByBand = updatedFrequencies)
+                    }
+                    state.copy(
                         band = info.band,
                         frequency = info.frequency,
+                        frequenciesByBand = updatedFrequencies,
                         stationName = info.serviceName.ifEmpty { info.ensemble },
                         rdsText = info.rdsText,
+                        currentSid = info.sid,
                         scanning = false,
                         statusMessage = getString(R.string.status_connected)
                     )
@@ -313,6 +398,7 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
             }
 
             0x21 -> {
+                val band = _state.value.band
                 val stations = mutableListOf<RadioStation>()
                 var offset = 7
                 while (offset + 23 <= packet.size) {
@@ -320,10 +406,14 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
                     offset += 23
                 }
                 if (stations.isNotEmpty()) {
-                    _state.update {
-                        it.copy(
-                            stations = stations.distinctBy { station -> station.cid },
-                            scanning = false
+                    _state.update { state ->
+                        val merged = (state.stations.filter { it.band != band } + stations)
+                            .distinctBy { station -> Triple(station.band, station.cid, station.sid) }
+                            .sortedWith(compareBy({ it.band.code }, { it.frequency }, { it.name }))
+                        state.copy(
+                            stations = merged,
+                            scanning = false,
+                            statusMessage = getString(R.string.status_connected)
                         )
                     }
                 }
