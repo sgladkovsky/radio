@@ -214,10 +214,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        binding.btnTuneDown.setOnClickListener { radioService?.sendCommand(RadioCommand.TUNE_DOWN) }
-        binding.btnTuneUp.setOnClickListener { radioService?.sendCommand(RadioCommand.TUNE_UP) }
-        binding.btnSeekDown.setOnClickListener { radioService?.sendCommand(RadioCommand.SEEK_DOWN) }
-        binding.btnSeekUp.setOnClickListener { radioService?.sendCommand(RadioCommand.SEEK_UP) }
+        binding.btnTuneDown.setOnClickListener { radioService?.tuneDown() }
+        binding.btnTuneUp.setOnClickListener { radioService?.tuneUp() }
+        binding.btnSeekDown.setOnClickListener { radioService?.seekDown() }
+        binding.btnSeekUp.setOnClickListener { radioService?.seekUp() }
 
         binding.btnScan.setOnClickListener {
             val service = radioService ?: return@setOnClickListener
@@ -262,11 +262,14 @@ class MainActivity : AppCompatActivity() {
                 RadioBand.DAB -> getString(R.string.band_dab)
             }
 
-            val displayFrequency = state.frequenciesByBand[state.band] ?: state.frequency
+            val displayFrequency = when {
+                state.frequency > 0 -> state.frequency
+                (state.frequenciesByBand[state.band] ?: 0) > 0 -> state.frequenciesByBand[state.band]!!
+                else -> BandRanges.startFrequency(state.band)
+            }
             binding.frequencyText.text = when {
                 state.band == RadioBand.DAB && displayFrequency == 0 -> "---"
-                displayFrequency > 0 -> RadioProtocol.formatFrequency(displayFrequency, state.band)
-                else -> RadioProtocol.formatFrequency(BandRanges.startFrequency(state.band), state.band)
+                else -> RadioProtocol.formatFrequency(displayFrequency, state.band)
             }
 
             if (state.band == RadioBand.DAB) {

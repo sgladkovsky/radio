@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -140,6 +141,49 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
         if (!_state.value.connected) return
         val packet = RadioProtocol.buildCommand(command, nextPacketNumber())
         writePacket(packet)
+    }
+
+    fun tuneUp() = adjustTuning(RadioCommand.TUNE_UP, direction = 1)
+    fun tuneDown() = adjustTuning(RadioCommand.TUNE_DOWN, direction = -1)
+    fun seekUp() = adjustTuning(RadioCommand.SEEK_UP, direction = 0)
+    fun seekDown() = adjustTuning(RadioCommand.SEEK_DOWN, direction = 0)
+
+    fun requestPlayInfo() {
+        sendCommand(RadioCommand.REQUEST_PLAY_INFO)
+    }
+
+    private fun adjustTuning(command: RadioCommand, direction: Int) {
+        if (!_state.value.connected) return
+        sendCommand(command)
+
+        if (direction != 0) {
+            val band = _state.value.band
+            val current = _state.value.frequency.takeIf { it > 0 }
+                ?: _state.value.frequenciesByBand[band]
+                ?: BandRanges.startFrequency(band)
+            val next = BandRanges.stepFrequency(band, current, direction)
+            val updatedFrequencies = _state.value.frequenciesByBand.toMutableMap().apply {
+                this[band] = next
+            }
+            _state.update {
+                it.copy(
+                    frequency = next,
+                    frequenciesByBand = updatedFrequencies
+                )
+            }
+        }
+
+        refreshPlayInfo()
+    }
+
+    private fun refreshPlayInfo() {
+        requestPlayInfo()
+        serviceScope.launch {
+            delay(120)
+            requestPlayInfo()
+            delay(180)
+            requestStatus()
+        }
     }
 
     fun playStation(station: RadioStation) {
@@ -381,7 +425,8 @@ class RadioService : Service(), SerialInputOutputManager.Listener {
                     val updatedFrequencies = state.frequenciesByBand.toMutableMap().apply {
                         this[info.band] = info.frequency
                     }
-                    if (info.band != state.band) {
+                    val appliesToCurrentBand = info.band == state.band
+                    if (!appliesToCurrentBand) {
                         return@update state.copy(frequenciesByBand = updatedFrequencies)
                     }
                     state.copy(
