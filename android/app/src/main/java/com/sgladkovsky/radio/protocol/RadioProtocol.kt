@@ -3,6 +3,7 @@ package com.sgladkovsky.radio.protocol
 import com.sgladkovsky.radio.model.RadioBand
 import com.sgladkovsky.radio.model.RadioStation
 import java.nio.charset.Charset
+import java.util.Locale
 
 /**
  * Serial protocol extracted from dab2_V3.12 (com.hyinfo.dab).
@@ -19,7 +20,9 @@ object RadioProtocol {
         RadioCommand.AUTO_SCAN to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0x83.toByte(), 0x00),
         RadioCommand.AUTO_SCAN_LONG to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0xA3.toByte(), 0x00),
         RadioCommand.CANCEL_SCAN to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0x03, 0x00),
-        RadioCommand.BAND to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0x03, 0x00),
+        RadioCommand.BAND_AM to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0x3D, 0x00),
+        RadioCommand.BAND_FM to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0x3E, 0x00),
+        RadioCommand.BAND_DAB to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0x90.toByte(), 0x00),
         RadioCommand.SEEK_UP to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0x84.toByte(), 0x00),
         RadioCommand.SEEK_DOWN to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0x86.toByte(), 0x00),
         RadioCommand.TUNE_UP to byteArrayOf(0xFA.toByte(), 0x55, 0x00, 0x00, 0x03, 0x80.toByte(), 0x87.toByte(), 0x00),
@@ -52,6 +55,19 @@ object RadioProtocol {
         packet[9] = ((station.sid / 256) and 0xFF).toByte()
         packet[10] = (station.sid and 0xFF).toByte()
         return finalizePacket(packet, packetNumber)
+    }
+
+    fun buildTuneFrequency(band: RadioBand, frequency: Int, packetNumber: Int): ByteArray {
+        return buildPlayStation(
+            RadioStation(
+                name = "",
+                frequency = frequency,
+                cid = frequency,
+                sid = 0,
+                band = band
+            ),
+            packetNumber
+        )
     }
 
     fun buildAreaSelect(areaIndex: Int, packetNumber: Int): ByteArray {
@@ -160,8 +176,8 @@ object RadioProtocol {
     fun formatFrequency(frequency: Int, band: RadioBand): String {
         return when (band) {
             RadioBand.AM -> "$frequency kHz"
-            RadioBand.FM -> String.format("%.1f MHz", frequency / 10.0)
-            RadioBand.DAB -> "SID %04X".format(frequency)
+            RadioBand.FM -> String.format(Locale.US, "%.1f MHz", frequency / 10.0)
+            RadioBand.DAB -> "SID %04X".format(Locale.US, frequency)
         }
     }
 
@@ -196,7 +212,9 @@ enum class RadioCommand {
     AUTO_SCAN,
     AUTO_SCAN_LONG,
     CANCEL_SCAN,
-    BAND,
+    BAND_AM,
+    BAND_FM,
+    BAND_DAB,
     SEEK_UP,
     SEEK_DOWN,
     TUNE_UP,

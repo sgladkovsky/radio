@@ -8,7 +8,12 @@
     <string name="band_am">AM</string>
     <string name="band_fm">FM</string>
     <string name="band_dab">DAB</string>
-    <string name="no_stations">Станции не найдены</string>
+    <string name="no_stations">Станции не найдены. Нажмите «Автоскан».</string>
+    <string name="auto_scan">Автоскан</string>
+    <string name="auto_scan_stop">Стоп</string>
+    <string name="scanned_stations">Найденные волны</string>
+    <string name="refresh_list">Обновить</string>
+    <string name="station_number_format">%1$d.</string>
     <string name="notification_channel">USB Radio</string>
     <string name="notification_title">USB Radio</string>
     <string name="notification_text">Радио работает в фоне</string>
